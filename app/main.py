@@ -32,7 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dovi_convert")
 
-app = FastAPI(title="DoVi Convert", version="1.1.0")
+app = FastAPI(title="DoVi Convert", version="1.2.0")
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
@@ -614,6 +614,22 @@ async def browse_directory(path: str = "/"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
 
+def jellyfin_headers(api_key: str) -> dict:
+    """Auth headers for Jellyfin. Jellyfin 12 rejects the legacy X-Emby-Token header
+    and ?api_key= parameter; the MediaBrowser Authorization scheme works on 10.x-12.x."""
+    return {
+        "Authorization": (
+            'MediaBrowser Client="dovi-convert-docker", Device="Docker", '
+            f'DeviceId="dovi-convert-docker", Version="1.0", Token="{api_key}"'
+        )
+    }
+
+
+def jellyfin_session() -> aiohttp.ClientSession:
+    """Client session with sane timeouts (scans of big libraries can be slow)."""
+    return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300, connect=10))
+
+
 @app.get("/api/jellyfin/libraries")
 async def get_jellyfin_libraries():
     """Get Jellyfin library paths to help with path mapping."""
@@ -624,8 +640,8 @@ async def get_jellyfin_libraries():
         raise HTTPException(status_code=400, detail="Jellyfin URL and API key are required")
     
     try:
-        async with aiohttp.ClientSession() as session:
-            headers = {"X-Emby-Token": api_key}
+        async with jellyfin_session() as session:
+            headers = jellyfin_headers(api_key)
             async with session.get(f"{url}/Library/VirtualFolders", headers=headers) as resp:
                 if resp.status == 200:
                     libraries = await resp.json()
@@ -659,8 +675,8 @@ async def get_jellyfin_libraries():
                     }
                 else:
                     raise HTTPException(status_code=resp.status, detail="Failed to get Jellyfin libraries")
-    except aiohttp.ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Connection error: {str(e)}")
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise HTTPException(status_code=500, detail=f"Connection error: {str(e) or type(e).__name__}")
 
 
 @app.post("/api/jellyfin/test")
@@ -672,8 +688,8 @@ async def test_jellyfin():
         raise HTTPException(status_code=400, detail="Jellyfin URL and API key are required")
     
     try:
-        async with aiohttp.ClientSession() as session:
-            headers = {"X-Emby-Token": api_key}
+        async with jellyfin_session() as session:
+            headers = jellyfin_headers(api_key)
             async with session.get(f"{url}/System/Info", headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -696,14 +712,16 @@ async def test_jellyfin():
                                 result["library_paths"] = paths
                                 if paths:
                                     result["path_warning"] = f"Jellyfin uses paths like: {paths[0]}. Make sure these are mounted in the container."
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Could not fetch Jellyfin library paths: {e}")
                     
                     return result
+                elif resp.status == 401:
+                    raise HTTPException(status_code=401, detail="Jellyfin rejected the API key (401). Check that the key is valid (Dashboard > API Keys).")
                 else:
                     raise HTTPException(status_code=resp.status, detail="Failed to connect to Jellyfin")
-    except aiohttp.ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Connection error: {str(e)}")
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise HTTPException(status_code=500, detail=f"Connection error: {str(e) or type(e).__name__}")
 
 
 @app.post("/api/scan")
@@ -850,9 +868,9 @@ async def refresh_jellyfin_item(filepath: str):
         await broadcast_message({"type": "output", "data": f"🔄 Refreshing Jellyfin metadata...\n"})
         
         filename = Path(filepath).name
-        headers = {"X-Emby-Token": api_key}
+        headers = jellyfin_headers(api_key)
         
-        async with aiohttp.ClientSession() as session:
+        async with jellyfin_session() as session:
             # Search for the item by filename
             search_url = f"{url}/Items"
             params = {
@@ -860,7 +878,7 @@ async def refresh_jellyfin_item(filepath: str):
                 "IncludeItemTypes": "Movie,Episode",
                 "Recursive": "true",
                 "Fields": "Path",
-                "Limit": "50"
+                "Limit": "100"
             }
             
             async with session.get(search_url, headers=headers, params=params) as response:
@@ -871,21 +889,18 @@ async def refresh_jellyfin_item(filepath: str):
                 data = await response.json()
                 items = data.get("Items", [])
                 
-                # Find the matching item by path
+                # Exact path match first, then exact filename match (handles different mount points)
                 item_id = None
                 for item in items:
-                    item_path = item.get("Path", "")
-                    # Check if paths match (handle different mount points)
-                    if item_path and (filepath in item_path or Path(filepath).name in item_path):
+                    if item.get("Path", "") == filepath:
                         item_id = item.get("Id")
                         break
-                
                 if not item_id:
-                    # Try direct path search
-                    for item in items:
-                        if item.get("Name", "").lower() in filename.lower() or filename.lower() in item.get("Name", "").lower():
-                            item_id = item.get("Id")
-                            break
+                    candidates = [i for i in items if i.get("Path") and Path(i["Path"]).name == filename]
+                    if len(candidates) == 1:
+                        item_id = candidates[0].get("Id")
+                    elif len(candidates) > 1:
+                        logger.warning(f"Ambiguous Jellyfin match for {filename}: {len(candidates)} items")
                 
                 if item_id:
                     logger.info(f"Found Jellyfin item ID: {item_id}")
@@ -908,8 +923,18 @@ async def refresh_jellyfin_item(filepath: str):
                             await broadcast_message({"type": "output", "data": f"⚠️ Jellyfin refresh returned: {refresh_response.status}\n"})
                 else:
                     logger.warning(f"Could not find item in Jellyfin - searched {len(items)} items")
-                    await broadcast_message({"type": "output", "data": f"⚠️ Could not find item in Jellyfin for refresh\n"})
-                    await broadcast_message({"type": "output", "data": f"💡 Try running a library scan in Jellyfin to update media info\n"})
+                    await broadcast_message({"type": "output", "data": f"⚠️ Could not find a unique item in Jellyfin - notifying about updated file\n"})
+                    try:
+                        async with session.post(
+                            f"{url}/Library/Media/Updated", headers=headers,
+                            json={"Updates": [{"Path": filepath, "UpdateType": "Modified"}]},
+                        ) as upd:
+                            if upd.status in (200, 204):
+                                await broadcast_message({"type": "output", "data": "✅ Jellyfin notified of file change\n"})
+                            else:
+                                await broadcast_message({"type": "output", "data": f"💡 Notify returned {upd.status}; run a library scan in Jellyfin\n"})
+                    except Exception as e:
+                        logger.warning(f"Jellyfin Media/Updated failed: {e}")
                     
     except Exception as e:
         logger.error(f"Jellyfin refresh error: {type(e).__name__}: {str(e)}")
@@ -938,8 +963,8 @@ async def run_jellyfin_scan():
     sdr_count = 0
     
     try:
-        async with aiohttp.ClientSession() as session:
-            headers = {"X-Emby-Token": api_key}
+        async with jellyfin_session() as session:
+            headers = jellyfin_headers(api_key)
             
             include_movies = state.settings.get("include_movies", True)
             include_tv = state.settings.get("include_tv_shows", True)
@@ -961,22 +986,32 @@ async def run_jellyfin_scan():
             
             await broadcast_message({"type": "output", "data": f"📡 Fetching {type_display}...\n"})
             
-            params = {
-                "IncludeItemTypes": type_str,
-                "Recursive": "true",
-                "Fields": "MediaStreams,Path,MediaSources",
-                "Limit": "10000"
-            }
-            
-            async with session.get(f"{url}/Items", headers=headers, params=params) as resp:
-                if resp.status != 200:
-                    await broadcast_message({"type": "output", "data": f"❌ Failed: HTTP {resp.status}\n"})
-                    state.is_running = False
-                    await broadcast_message({"type": "status", "running": False})
-                    return
-                
-                data = await resp.json()
-                items = data.get("Items", [])
+            items = []
+            page_size = 500
+            start_index = 0
+            while True:
+                params = {
+                    "IncludeItemTypes": type_str,
+                    "Recursive": "true",
+                    "Fields": "MediaStreams,Path,MediaSources",
+                    "StartIndex": str(start_index),
+                    "Limit": str(page_size),
+                }
+                async with session.get(f"{url}/Items", headers=headers, params=params) as resp:
+                    if resp.status != 200:
+                        msg = "API key rejected (401)" if resp.status == 401 else f"HTTP {resp.status}"
+                        await broadcast_message({"type": "output", "data": f"❌ Failed: {msg}\n"})
+                        state.is_running = False
+                        await broadcast_message({"type": "status", "running": False})
+                        return
+                    data = await resp.json()
+                page = data.get("Items", [])
+                items.extend(page)
+                total_available = data.get("TotalRecordCount", len(items))
+                await broadcast_message({"type": "output", "data": f"   ...{len(items)}/{total_available}\n"})
+                start_index += len(page)
+                if not page or start_index >= total_available:
+                    break
             
             total_items = len(items)
             await broadcast_message({"type": "output", "data": f"📂 Found {total_items} items\n\n"})
