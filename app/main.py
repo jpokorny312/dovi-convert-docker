@@ -614,6 +614,17 @@ async def browse_directory(path: str = "/"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
 
+def jellyfin_headers(api_key: str) -> dict:
+    """Auth headers for Jellyfin. Jellyfin 12 rejects the legacy X-Emby-Token header
+    and ?api_key= parameter; the MediaBrowser Authorization scheme works on 10.x-12.x."""
+    return {
+        "Authorization": (
+            'MediaBrowser Client="dovi-convert-docker", Device="Docker", '
+            f'DeviceId="dovi-convert-docker", Version="1.0", Token="{api_key}"'
+        )
+    }
+
+
 @app.get("/api/jellyfin/libraries")
 async def get_jellyfin_libraries():
     """Get Jellyfin library paths to help with path mapping."""
@@ -625,7 +636,7 @@ async def get_jellyfin_libraries():
     
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"X-Emby-Token": api_key}
+            headers = jellyfin_headers(api_key)
             async with session.get(f"{url}/Library/VirtualFolders", headers=headers) as resp:
                 if resp.status == 200:
                     libraries = await resp.json()
@@ -673,7 +684,7 @@ async def test_jellyfin():
     
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"X-Emby-Token": api_key}
+            headers = jellyfin_headers(api_key)
             async with session.get(f"{url}/System/Info", headers=headers) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -700,6 +711,8 @@ async def test_jellyfin():
                         pass
                     
                     return result
+                elif resp.status == 401:
+                    raise HTTPException(status_code=401, detail="Jellyfin rejected the API key (401). Check that the key is valid (Dashboard > API Keys).")
                 else:
                     raise HTTPException(status_code=resp.status, detail="Failed to connect to Jellyfin")
     except aiohttp.ClientError as e:
@@ -850,7 +863,7 @@ async def refresh_jellyfin_item(filepath: str):
         await broadcast_message({"type": "output", "data": f"🔄 Refreshing Jellyfin metadata...\n"})
         
         filename = Path(filepath).name
-        headers = {"X-Emby-Token": api_key}
+        headers = jellyfin_headers(api_key)
         
         async with aiohttp.ClientSession() as session:
             # Search for the item by filename
@@ -939,7 +952,7 @@ async def run_jellyfin_scan():
     
     try:
         async with aiohttp.ClientSession() as session:
-            headers = {"X-Emby-Token": api_key}
+            headers = jellyfin_headers(api_key)
             
             include_movies = state.settings.get("include_movies", True)
             include_tv = state.settings.get("include_tv_shows", True)
