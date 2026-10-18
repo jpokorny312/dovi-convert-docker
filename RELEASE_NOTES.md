@@ -1,17 +1,13 @@
-# v1.2.0 – Jellyfin 12 support
+# v1.2.1 – Cleaner conversion output
 
-## Highlights
-- **Jellyfin 12.x compatible.** Jellyfin 12 disables legacy authentication by default, so the previous `X-Emby-Token` header resulted in `401` on every call. The app now authenticates with the `Authorization: MediaBrowser … Token="…"` header, which also works on Jellyfin 10.x/11.x.
+## Fixes
+- **Web UI output:** The progress bar of `dovi_convert` is now shown on a single, continuously updated line instead of one new line per update. Conversion progress is easy to follow again, and the log history stays compact.
 
-## Improvements
-- Jellyfin library scan is paged (500 items per request) with progress output, instead of one 10,000-item request.
-- More reliable metadata refresh after conversion/restore: exact path match first, then a unique exact file name; falls back to notifying Jellyfin via `/Library/Media/Updated`. Previously partial name matches could refresh the wrong item.
-- Timeouts on all Jellyfin requests; clearer error when the API key is rejected (401).
-- Updated Python dependencies (FastAPI, uvicorn, aiohttp, pydantic, Jinja2, websockets, python-multipart).
+## Included from v1.2.0
+- Jellyfin 12.x compatibility (`Authorization: MediaBrowser` header instead of the removed `X-Emby-Token`), paged library scans, exact item matching for metadata refresh, request timeouts, updated dependencies.
 
 ## Upgrade notes
-- No configuration changes needed. Existing Jellyfin URL/API key settings keep working.
-- Pull the new image: `docker pull <user>/dovi-convert:1.2.0`
+- No configuration changes needed. Pull the new image: `docker pull jpkrny/dovi-convert:1.2.1`
 
 ## Full changelog
 See [CHANGELOG.md](CHANGELOG.md).
