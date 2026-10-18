@@ -1,7 +1,7 @@
 # v1.2.1 – Cleaner conversion output
 
 ## Fixes
-- **Web UI output:** The progress bar of `dovi_convert` is now shown on a single, continuously updated line instead of one new line per update. Conversion progress is easy to follow again, and the log history stays compact.
+- **Web UI output:** The progress bar of `dovi_convert` is now shown as a single-line progress bar (percent, step, elapsed time, ETA) that updates in place instead of one new line per update. Conversion progress is easy to follow again, and the log history stays compact.
 - **Responsiveness:** ANSI control codes of the `dovi_convert` spinner are stripped, and spinner updates are throttled, so the UI no longer lags during long steps.
 
 ## Included from v1.2.0
