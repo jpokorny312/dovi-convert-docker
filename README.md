@@ -133,7 +133,7 @@ Original files are preserved as `*.bak.dovi_convert`. Enable **Auto Cleanup** on
 
 ## Releases
 
-See [CHANGELOG.md](CHANGELOG.md) and [RELEASE_NOTES.md](RELEASE_NOTES.md). Publishing instructions for maintainers: [DOCKERHUB.md](DOCKERHUB.md).
+See [CHANGELOG.md](CHANGELOG.md) and [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ## Building Locally
 

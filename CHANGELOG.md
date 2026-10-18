@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-10-18
+
+### Fixed
+- Web UI: progress-bar redraws of dovi_convert (carriage-return lines) no longer flood the output with one line per update; they now update a single line in place
+
 ## [1.2.0] - 2026-10-15
 
 ### Fixed

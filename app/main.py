@@ -32,7 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dovi_convert")
 
-app = FastAPI(title="DoVi Convert", version="1.2.0")
+app = FastAPI(title="DoVi Convert", version="1.2.1")
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")
@@ -2494,12 +2494,26 @@ async def run_convert_command(cmd: list, cwd: str = None, file_num: int = 1, tot
             # Rough estimate: 1 minute per 6GB (100 MB/s)
             estimated_total_time = (file_size / (100 * 1024 * 1024)) * 1.3  # 30% buffer for convert/remux
         
-        async def process_line(text):
-            """Process a single line of output"""
-            nonlocal saw_error, saw_success, current_step, file_percent, last_progress_update, current_step_num, total_steps, script_elapsed_secs
+        last_live_sent = 0.0
+        prev_was_live = False
+        
+        async def process_line(text, live=False):
+            """Process a single line of output.
+            live=True: line was terminated by a carriage return (progress-bar redraw);
+            the UI replaces the previous live line instead of appending a new one."""
+            nonlocal saw_error, saw_success, current_step, file_percent, last_progress_update, current_step_num, total_steps, script_elapsed_secs, last_live_sent, prev_was_live
             
-            output_lines.append(text)
-            await broadcast_message({"type": "output", "data": text})
+            if live:
+                # Redraws are transient: keep them out of output_lines and throttle the UI updates
+                now = asyncio.get_event_loop().time()
+                if now - last_live_sent >= 0.2:
+                    last_live_sent = now
+                    await broadcast_message({"type": "output", "data": text, "live": True})
+            else:
+                output_lines.append(text)
+                # A final line right after live redraws replaces the last live line
+                await broadcast_message({"type": "output", "data": text, "replace_live": prev_was_live})
+            prev_was_live = live
             
             # Check for error indicators in output
             if re.search(r'Unknown command|Error:|ERROR|FAILED|failed|No such file|not found', text, re.IGNORECASE):
@@ -2642,14 +2656,15 @@ async def run_convert_command(cmd: list, cwd: str = None, file_num: int = 1, tot
             text = chunk.decode('utf-8', errors='replace')
             buffer += text
             
-            # Handle carriage returns (progress updates) - treat as line breaks
-            buffer = buffer.replace('\r\n', '\n').replace('\r', '\n')
-            
-            # Process complete lines from buffer
-            while '\n' in buffer:
-                line, buffer = buffer.split('\n', 1)
-                if line.strip():  # Only process non-empty lines
-                    await process_line(line + '\n')
+            # Split on \n (normal line) and \r (progress-bar redraw -> "live" line)
+            buffer = buffer.replace('\r\n', '\n')
+            while True:
+                m = re.search(r'[\r\n]', buffer)
+                if not m:
+                    break
+                line, term, buffer = buffer[:m.start()], m.group(), buffer[m.end():]
+                if line.strip():
+                    await process_line(line + '\n', live=(term == '\r'))
         
         await process.wait()
         logger.info(f"Process exited with code {process.returncode}")
