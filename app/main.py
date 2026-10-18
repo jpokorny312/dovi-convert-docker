@@ -2412,6 +2412,9 @@ async def run_command(cmd: list, cwd: str = None):
         await broadcast_message({"type": "output", "data": f"❌ Error: {type(e).__name__}: {str(e)}\n"})
 
 
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+
+
 async def run_convert_command(cmd: list, cwd: str = None, file_num: int = 1, total_files: int = 1, filename: str = "", file_size: int = 0, filepath: str = ""):
     """Run a conversion command with progress parsing."""
     import re
@@ -2663,6 +2666,8 @@ async def run_convert_command(cmd: list, cwd: str = None, file_num: int = 1, tot
                 if not m:
                     break
                 line, term, buffer = buffer[:m.start()], m.group(), buffer[m.end():]
+                # dovi_convert's spinner emits ANSI codes (\033[K clear-line, \033[?25l hide-cursor, colors)
+                line = ANSI_ESCAPE_RE.sub('', line)
                 if line.strip():
                     await process_line(line + '\n', live=(term == '\r'))
         
