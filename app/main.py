@@ -32,7 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dovi_convert")
 
-app = FastAPI(title="DoVi Convert", version="1.2.1")
+app = FastAPI(title="DoVi Convert", version="1.2.2")
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="/app/static"), name="static")

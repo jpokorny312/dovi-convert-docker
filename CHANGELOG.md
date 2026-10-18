@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-10-18
+
+### Fixed
+- Web UI: the dovi_convert spinner is now shown as a single-line text progress bar that updates in place (`[████░░░░] 45%  Step 1/3 … ⏱ elapsed  ETA`) instead of a new line per update
+- Web UI: ANSI escape codes from the dovi_convert spinner (clear-line, cursor hide/show, colors) are stripped from the output
+- Web UI: far fewer WebSocket messages and no localStorage write per spinner tick, so the UI stays responsive during long conversion steps
+
 ## [1.2.1] - 2026-10-18
 
 ### Fixed
-- Web UI: progress-bar redraws of dovi_convert (carriage-return lines) no longer flood the output with one line per update; they now update a single line in place, rendered as a text progress bar (`[████░░░░] 45%  Step 1/3 … ⏱ elapsed  ETA`)
-- Web UI: ANSI escape codes from the dovi_convert spinner (clear-line, cursor hide/show, colors) are stripped from the output
-- Web UI: far fewer WebSocket messages and no localStorage write per spinner tick, so the UI stays responsive during long conversion steps
+- Web UI: progress-bar redraws of dovi_convert (carriage-return lines) no longer flood the output with one line per update; they now update a single line in place
 
 ## [1.2.0] - 2026-10-15
 

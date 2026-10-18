@@ -1,14 +1,11 @@
-# v1.2.1 – Cleaner conversion output
+# v1.2.2 – Single-line progress bar
 
 ## Fixes
-- **Web UI output:** The progress bar of `dovi_convert` is now shown as a single-line progress bar (percent, step, elapsed time, ETA) that updates in place instead of one new line per update. Conversion progress is easy to follow again, and the log history stays compact.
-- **Responsiveness:** ANSI control codes of the `dovi_convert` spinner are stripped, and spinner updates are throttled, so the UI no longer lags during long steps.
-
-## Included from v1.2.0
-- Jellyfin 12.x compatibility (`Authorization: MediaBrowser` header instead of the removed `X-Emby-Token`), paged library scans, exact item matching for metadata refresh, request timeouts, updated dependencies.
+- **Progress bar in the output:** The `dovi_convert` spinner is now shown as one continuously updated line with a progress bar, percent, step, elapsed time and ETA, e.g. `[████████████████░░░░░░░░]  66%  Step 1/3: Extracting video stream  ⏱ 1m 05s  ETA 45s`. Finished steps stay in the log as normal lines. Percent and ETA are estimates (dovi_convert reports no percentage).
+- **Responsiveness:** ANSI control codes of the spinner are stripped and updates are throttled, so the UI no longer lags during long conversion steps.
 
 ## Upgrade notes
-- No configuration changes needed. Pull the new image: `docker pull jpkrny/dovi-convert:1.2.1`
+- No configuration changes needed. Pull the new image: `docker pull jpkrny/dovi-convert:1.2.2`
 
 ## Full changelog
 See [CHANGELOG.md](CHANGELOG.md).
