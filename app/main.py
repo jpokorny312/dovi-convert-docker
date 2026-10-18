@@ -2506,13 +2506,7 @@ async def run_convert_command(cmd: list, cwd: str = None, file_num: int = 1, tot
             the UI replaces the previous live line instead of appending a new one."""
             nonlocal saw_error, saw_success, current_step, file_percent, last_progress_update, current_step_num, total_steps, script_elapsed_secs, last_live_sent, prev_was_live
             
-            if live:
-                # Redraws are transient: keep them out of output_lines and throttle the UI updates
-                now = asyncio.get_event_loop().time()
-                if now - last_live_sent >= 0.2:
-                    last_live_sent = now
-                    await broadcast_message({"type": "output", "data": text, "live": True})
-            else:
+            if not live:
                 output_lines.append(text)
                 # A final line right after live redraws replaces the last live line
                 await broadcast_message({"type": "output", "data": text, "replace_live": prev_was_live})
@@ -2624,6 +2618,16 @@ async def run_convert_command(cmd: list, cwd: str = None, file_num: int = 1, tot
                 step_display = current_step
                 if current_step_num > 0:
                     step_display = f"Step {current_step_num}/{total_steps}: {current_step}"
+                
+                if live:
+                    # Replace the spinner redraw by a single-line progress bar
+                    filled = round(file_percent / 100 * 24)
+                    bar = "█" * filled + "░" * (24 - filled)
+                    mins, secs = divmod(int(elapsed), 60)
+                    bar_line = f"[{bar}] {file_percent:3d}%  {step_display}  ⏱ {mins}m {secs:02d}s"
+                    if eta_str:
+                        bar_line += f"  ETA {eta_str}"
+                    await broadcast_message({"type": "output", "data": bar_line + "\n", "live": True})
                 
                 await broadcast_message({
                     "type": "progress",
